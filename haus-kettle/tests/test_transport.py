@@ -115,3 +115,18 @@ class TransportTest(unittest.TestCase):
         self.assertEqual(
             self.peer.requests[-1]["params"], {"did": "123", "siid": 3, "aiid": 1, "in": []}
         )
+
+    def test_cancellation_between_preset_ack_and_activation_prevents_power_on(self):
+        self.transport.read()
+        self.peer.requests.clear()
+        calls = 0
+
+        def cancelled():
+            nonlocal calls
+            calls += 1
+            return calls > 1
+
+        with self.assertRaises(CommandError):
+            self.transport.write(plan("boil", "PRESS", reading()), cancelled=cancelled)
+        self.assertEqual(len(self.peer.requests), 1)
+        self.assertEqual(self.peer.requests[0]["params"][0]["piid"], 11)

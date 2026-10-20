@@ -29,7 +29,9 @@ class Device:
             raise TimeoutError("secret token must never appear in diagnostics")
         return reading()
 
-    def write(self, operations):
+    def write(self, operations, *, cancelled=lambda: False):
+        if cancelled():
+            raise TimeoutError("Cancelled")
         self.writes.append(operations)
 
 
@@ -115,3 +117,41 @@ class BridgeTest(unittest.TestCase):
         self.bridge.tick()
         self.assertEqual(len([t for t, _, _ in self.client.messages if t.endswith("/config")]), 2)
         self.assertEqual(self.device.writes, [])
+
+    def test_stop_discards_pending_activation_and_does_not_require_a_successful_read(self):
+        self.send()
+        self.send("stop")
+        self.device.fail = True
+        self.bridge.tick()
+        self.assertEqual(len(self.device.writes), 1)
+        self.assertEqual(self.device.writes[0][0].method, "action")
+        self.assertTrue(self.bridge.commands.empty())
+
+    def test_failed_write_remains_visible_after_a_successful_poll_without_retrying(self):
+        def reject(_operations, **_kwargs):
+            raise TimeoutError("private source details")
+
+        self.device.write = reject
+        self.send()
+        self.bridge.tick()
+        self.assertIn("not be repeated", self.bridge.command_error)
+        self.assertNotIn("private source", json.dumps(self.client.messages))
+        diagnostic = [
+            json.loads(p) for t, p, _ in self.client.messages if t.endswith("/diagnostic")
+        ][-1]
+        self.assertEqual(diagnostic["state"], "Connected")
+        self.assertEqual(diagnostic["last_command_error"], self.bridge.command_error)
+
+    def test_stop_arriving_during_read_cancels_activation_before_write(self):
+        def read_and_stop():
+            self.send("stop")
+            return reading()
+
+        self.device.read = read_and_stop
+        self.send()
+        self.bridge.tick()
+        self.assertEqual(self.device.writes, [])
+        self.device.read = lambda: reading()
+        self.now += 5
+        self.bridge.tick()
+        self.assertEqual(self.device.writes[0][0].method, "action")

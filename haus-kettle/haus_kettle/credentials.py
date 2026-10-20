@@ -51,11 +51,19 @@ def validate(credentials):
         raise CredentialsError("The kettle must have a private network address.")
     if not re.fullmatch(r"[a-fA-F0-9]{32}", credentials.get("token", "")):
         raise CredentialsError("Enter the kettle's 32-character local token.")
-    if not re.fullmatch(r"[0-9]{1,20}", str(credentials.get("did", ""))):
+    if (
+        not re.fullmatch(r"[0-9]{1,10}", str(credentials.get("did", "")))
+        or not 0 < int(credentials["did"]) <= 0xFFFFFFFF
+    ):
         raise CredentialsError("Enter a valid Xiaomi device ID.")
     if credentials.get("model", MODEL) != MODEL:
         raise CredentialsError("This model is not supported by Haus Kettle yet.")
-    return dict(credentials)
+    return {
+        "host": str(address),
+        "token": credentials["token"],
+        "did": str(credentials["did"]),
+        "model": MODEL,
+    }
 
 
 def save(path, credentials):

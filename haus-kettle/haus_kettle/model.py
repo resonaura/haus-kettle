@@ -103,6 +103,8 @@ def plan(key, payload, state, *, read_only=False, age=0):
     if not isinstance(payload, str) or len(payload) > 128:
         raise CommandError("Unsupported command.")
     value = payload.strip()
+    if key in {"boil", "stop"} and value != "PRESS":
+        raise CommandError("Unsupported button command.")
     if key == "stop" or key in {"mode", "power"} and value in {"off", "OFF"}:
         return [Operation("action", ({"siid": 3, "aiid": 1, "in": []},))]
     if key in {"boil", "mode", "power"}:

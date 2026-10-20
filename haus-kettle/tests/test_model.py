@@ -89,6 +89,11 @@ class ModelTest(unittest.TestCase):
             ({"siid": 2, "piid": 4, "value": 45},),
         )
 
+    def test_buttons_reject_arbitrary_payloads(self):
+        for key in ["boil", "stop"]:
+            with self.assertRaises(CommandError):
+                plan(key, "NO", reading())
+
     def test_mqtt_discovery_groups_all_capabilities_and_keeps_commands_unretained(self):
         topic, config = discovery("123", "Kitchen Kettle")
         self.assertEqual(topic, "homeassistant/device/haus_kettle_123/config")

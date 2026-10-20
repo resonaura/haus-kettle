@@ -25,6 +25,8 @@ class Bridge:
         self.rediscover = False
         self.next_poll = 0
         self.read_only = bool(options.get("read_only", False))
+        self.command_error = ""
+        self.stop_generation = 0
 
     def publish(self, suffix, value, retain=True):
         body = json.dumps(value, separators=(",", ":")) if isinstance(value, dict) else value
@@ -33,7 +35,12 @@ class Bridge:
     def diagnostic(self, state, detail=""):
         self.publish(
             "diagnostic",
-            {"state": state, "detail": detail, "read_only": self.read_only},
+            {
+                "state": state,
+                "detail": detail,
+                "read_only": self.read_only,
+                "last_command_error": self.command_error,
+            },
         )
 
     def on_connect(self, _client, _userdata, _flags, reason_code, _properties):
@@ -48,6 +55,7 @@ class Bridge:
 
     def on_disconnect(self, *_args):
         self.connected = False
+        self.stop_generation += 1
         self._clear_commands()
 
     def _clear_commands(self):
@@ -74,6 +82,9 @@ class Bridge:
                 message.topic[len(prefix) :],
                 message.payload.decode("utf-8"),
             )
+            if command[1:] in {("stop", "PRESS"), ("mode", "off"), ("power", "OFF")}:
+                self.stop_generation += 1
+                self._clear_commands()
             self.commands.put_nowait(command)
         except (UnicodeDecodeError, queue.Full):
             return
@@ -95,22 +106,35 @@ class Bridge:
         except queue.Empty:
             pass
         else:
-            if now - created <= 4:
+            stopping = key == "stop" or (key in {"mode", "power"} and value in {"off", "OFF"})
+            generation = self.stop_generation
+            if now - created <= (30 if stopping else 4):
                 try:
                     # Re-read first: never activate from a cached/stale safety state.
-                    self.read()
+                    if not stopping:
+                        self.read()
                     operations = plan(
                         key,
                         value,
                         self.state,
                         read_only=self.read_only,
-                        age=self.clock() - self.last_read,
+                        age=self.clock() - self.last_read
+                        if self.last_read is not None
+                        else float("inf"),
                     )
-                    self.transport.write(operations)
+                    self.transport.write(
+                        operations,
+                        cancelled=lambda: not self.connected or generation != self.stop_generation,
+                    )
+                    self.command_error = ""
                     self.next_poll = 0
                 except CommandError as error:
+                    self.command_error = str(error)
                     self.diagnostic("Check request", str(error))
                 except Exception:
+                    self.command_error = (
+                        "The command could not be confirmed. It will not be repeated."
+                    )
                     self.diagnostic(
                         "Check connection",
                         "The command could not be confirmed. It will not be repeated.",
