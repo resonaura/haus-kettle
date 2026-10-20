@@ -26,6 +26,7 @@ class Bridge:
         self.next_poll = 0
         self.read_only = bool(options.get("read_only", False))
         self.command_error = ""
+        self.stop_generation = 0
 
     def publish(self, suffix, value, retain=True):
         body = json.dumps(value, separators=(",", ":")) if isinstance(value, dict) else value
@@ -54,6 +55,7 @@ class Bridge:
 
     def on_disconnect(self, *_args):
         self.connected = False
+        self.stop_generation += 1
         self._clear_commands()
 
     def _clear_commands(self):
@@ -81,6 +83,7 @@ class Bridge:
                 message.payload.decode("utf-8"),
             )
             if command[1:] in {("stop", "PRESS"), ("mode", "off"), ("power", "OFF")}:
+                self.stop_generation += 1
                 self._clear_commands()
             self.commands.put_nowait(command)
         except (UnicodeDecodeError, queue.Full):
@@ -103,12 +106,11 @@ class Bridge:
         except queue.Empty:
             pass
         else:
-            if now - created <= 4:
+            stopping = key == "stop" or (key in {"mode", "power"} and value in {"off", "OFF"})
+            generation = self.stop_generation
+            if now - created <= (30 if stopping else 4):
                 try:
                     # Re-read first: never activate from a cached/stale safety state.
-                    stopping = key == "stop" or (
-                        key in {"mode", "power"} and value in {"off", "OFF"}
-                    )
                     if not stopping:
                         self.read()
                     operations = plan(
@@ -120,7 +122,10 @@ class Bridge:
                         if self.last_read is not None
                         else float("inf"),
                     )
-                    self.transport.write(operations)
+                    self.transport.write(
+                        operations,
+                        cancelled=lambda: not self.connected or generation != self.stop_generation,
+                    )
                     self.command_error = ""
                     self.next_poll = 0
                 except CommandError as error:

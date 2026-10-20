@@ -82,8 +82,10 @@ class Transport:
             rows.extend(self.send("get_properties", properties[offset : offset + 8]))
         return decode(rows)
 
-    def write(self, operations):
+    def write(self, operations, *, cancelled=lambda: False):
         for operation in operations:
+            if cancelled():
+                raise CommandError("A newer request cancelled this command.")
             params = [{"did": self.did, **item} for item in operation.params]
             result = self.send(
                 operation.method, params[0] if operation.method == "action" else params
