@@ -42,6 +42,7 @@ def discovery(device_id, name, *, read_only=False):
                 "mode_command_topic": f"{base}/set/mode",
                 "power_command_topic": f"{base}/set/power",
                 "temperature_command_topic": f"{base}/set/target_temperature",
+                "temperature_command_template": "{{ value | float | round(0) | int }}",
                 **controls,
             }
             if not read_only
