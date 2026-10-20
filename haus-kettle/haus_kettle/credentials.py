@@ -30,7 +30,7 @@ def api(path, data=None):
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             result = json.load(response)
-            return result.get("data", result)
+            return result.get("data", result) if isinstance(result, dict) else result
     except (OSError, ValueError, urllib.error.HTTPError):
         raise CredentialsError(
             "Check the connection in Home Assistant Integrations; Xiaomi may need sign-in or verification."
@@ -103,7 +103,12 @@ def refresh(options, path, *, renew=False):
         # Existing integration owns regional accounts, expired sessions and 2FA UI.
         api("/core/api/services/xiaomi_miot/renew_devices", {})
     result = api("/core/api/services/xiaomi_miot/get_token?return_response", {"name": MODEL})
-    rows = result.get("service_response", result).get("list", [])
+    response = result.get("service_response", result) if isinstance(result, dict) else None
+    if not isinstance(response, dict) or not isinstance(response.get("list"), list):
+        raise CredentialsError(
+            "Reconnect the Xiaomi integration in Home Assistant to import this kettle."
+        )
+    rows = response["list"]
     selected = [
         r
         for r in rows

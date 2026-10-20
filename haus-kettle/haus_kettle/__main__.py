@@ -79,9 +79,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except Exception as error:
         print(
-            "Haus Kettle could not start. Check its configuration and broker connection.",
+            f"Haus Kettle could not start ({type(error).__name__}). Check its configuration and broker connection.",
             flush=True,
         )
         raise SystemExit(1) from None
