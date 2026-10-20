@@ -1,0 +1,22 @@
+configuration:
+  name:
+    name: Device name
+    description: The physical kettle name used in Home Assistant and Haus.
+  source:
+    name: Connection
+    description: Reuse the existing Xiaomi Miot integration, or supply a local token. Daily control always uses the local network.
+  device_id:
+    name: Xiaomi device ID
+    description: Optional when the existing Xiaomi integration has exactly one supported kettle. Required for a local connection.
+  host:
+    name: Local IP address
+    description: Used only with a local connection. A DHCP reservation helps keep it stable.
+  token:
+    name: Local token
+    description: Used only with a local connection. Stored privately; never sent to Haus clients.
+  read_only:
+    name: Read-only commissioning
+    description: Read temperatures and connection state without allowing any device writes. Startup and recovery never start heating in either mode.
+  mqtt:
+    name: MQTT broker
+    description: Leave host empty to use the Home Assistant broker automatically.

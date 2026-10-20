@@ -1,0 +1,40 @@
+name: Haus Kettle
+slug: haus-kettle
+version: "0.1.0"
+description: "Local Xiaomi kettle control, temperatures, presets and connection recovery."
+url: "https://github.com/resonaura/haus-kettle"
+image: "ghcr.io/resonaura/haus-kettle-{arch}"
+arch: [amd64, aarch64]
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
+services: [mqtt:need]
+options:
+  name: Kitchen Kettle
+  source: home_assistant
+  device_id: ""
+  host: ""
+  token: ""
+  read_only: false
+  mqtt:
+    host: ""
+    port: 1883
+    username: ""
+    password: ""
+    ssl: false
+schema:
+  name: str
+  source: list(home_assistant|local)
+  device_id: str?
+  host: str?
+  token: password?
+  read_only: bool
+  mqtt:
+    host: str?
+    port: port
+    username: str?
+    password: password?
+    ssl: bool
