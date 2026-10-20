@@ -1,10 +1,11 @@
 import json
+import io
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from haus_kettle.credentials import CredentialsError, load, refresh, save, validate
+from haus_kettle.credentials import CredentialsError, api, load, refresh, save, validate
 from haus_kettle.model import MODEL
 
 
@@ -51,3 +52,23 @@ class CredentialsTest(unittest.TestCase):
         ]:
             with self.assertRaises(CredentialsError):
                 validate({**self.credentials, key: value})
+
+    def test_ha_services_without_response_return_a_list_not_an_object(self):
+        with (
+            patch.dict("os.environ", {"SUPERVISOR_TOKEN": "synthetic-test-token"}),
+            patch("urllib.request.urlopen", return_value=io.StringIO("[]")),
+        ):
+            self.assertEqual(api("/core/api/services/xiaomi_miot/renew_devices", {}), [])
+        with patch(
+            "haus_kettle.credentials.api",
+            side_effect=[[], {"service_response": {"list": [self.credentials]}}],
+        ):
+            self.assertEqual(refresh({}, self.path, renew=True), self.credentials)
+
+    def test_unexpected_import_response_is_a_recoverable_configuration_error(self):
+        for result in [None, [], {"service_response": None}]:
+            with (
+                patch("haus_kettle.credentials.api", return_value=result),
+                self.assertRaises(CredentialsError),
+            ):
+                refresh({}, self.path)
