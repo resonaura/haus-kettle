@@ -14,6 +14,7 @@ def reading(**patch):
         "lifted": False,
         "target_mode": 0,
         "activity": "Idle",
+        "mode": "off",
         **patch,
     }
 
@@ -29,7 +30,10 @@ def rows(state=None):
 class ModelTest(unittest.TestCase):
     def test_observations_are_not_optimistic_or_fake_temperatures(self):
         self.assertEqual(decode(rows())["mode"], "off")
-        self.assertEqual(decode(rows(reading(power=True, target_mode=1)))["mode"], "performance")
+        self.assertEqual(
+            decode(rows(reading(power=True, status=2, target_mode=1)))["mode"], "performance"
+        )
+        self.assertEqual(decode(rows(reading(power=True, status=0, target_mode=1)))["mode"], "off")
         self.assertEqual(decode(rows(reading(power=True, status=4)))["activity"], "Keeping warm")
         for data in [
             [],
@@ -48,7 +52,9 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(plan("mode", "electric", reading())[0].params[0]["value"], 0)
 
     def test_stop_is_an_action_even_if_current_state_is_stale(self):
-        self.assertEqual(plan("mode", "off", {}, age=1000)[0].method, "action")
+        operations = plan("mode", "off", {}, age=1000)
+        self.assertEqual(operations[0].method, "action")
+        self.assertEqual(operations[1].params, ({"siid": 2, "piid": 7, "value": False},))
 
     def test_no_activation_without_fresh_safety_readings(self):
         for state, age in [
@@ -105,7 +111,7 @@ class ModelTest(unittest.TestCase):
         for component in components.values():
             if any("command_topic" in k for k in component):
                 self.assertFalse(component["retain"])
-                self.assertEqual(component["qos"], 0)
+                self.assertEqual(component["qos"], 1)
         _, monitor = discovery("123", "Kitchen Kettle", read_only=True)
         self.assertNotIn("boil", monitor["components"])
         self.assertNotIn("mode_command_topic", monitor["components"]["kettle"])

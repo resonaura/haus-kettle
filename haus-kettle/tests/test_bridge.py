@@ -79,6 +79,22 @@ class BridgeTest(unittest.TestCase):
         self.bridge.on_disconnect()
         self.assertTrue(self.bridge.commands.empty())
 
+    def test_redelivered_stop_is_safe_and_cancels_queued_activation(self):
+        self.send()
+        self.send("mode", b"off", dup=True)
+        self.bridge.tick()
+        self.assertEqual(len(self.device.writes), 1)
+        self.assertFalse(self.device.writes[0][-1].params[0]["value"])
+        self.assertTrue(self.bridge.commands.empty())
+
+    def test_status_polls_every_two_seconds_idle_and_one_second_while_active(self):
+        self.bridge.tick()
+        self.assertEqual(self.bridge.next_poll, self.now + 2)
+        self.device.read = lambda: reading(power=True, status=1, mode="electric")
+        self.now += 2
+        self.bridge.tick()
+        self.assertEqual(self.bridge.next_poll, self.now + 1)
+
     def test_read_only_never_sends_even_fresh_commands(self):
         self.bridge.read_only = True
         self.send()

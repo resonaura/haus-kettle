@@ -83,6 +83,10 @@ class Transport:
         return decode(rows)
 
     def write(self, operations, *, cancelled=lambda: False):
+        # Stop intentionally skips a state read; still refresh identity and clock.
+        if cancelled():
+            raise CommandError("A newer request cancelled this command.")
+        self.handshake()
         for operation in operations:
             if cancelled():
                 raise CommandError("A newer request cancelled this command.")
