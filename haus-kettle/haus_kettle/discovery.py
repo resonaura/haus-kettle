@@ -8,7 +8,7 @@ def discovery(device_id, name, *, read_only=False):
     base = f"haus/kettle/{device_id}"
     state = f"{base}/state"
     availability = [{"topic": f"{base}/bridge"}, {"topic": f"{base}/availability"}]
-    common = {"availability": availability, "availability_mode": "all", "qos": 0}
+    common = {"availability": availability, "availability_mode": "all", "qos": 1}
     controls = {} if read_only else {"retain": False}
     components = {}
 

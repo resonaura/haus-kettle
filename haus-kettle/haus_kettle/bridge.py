@@ -27,6 +27,12 @@ class Bridge:
         self.read_only = bool(options.get("read_only", False))
         self.command_error = ""
         self.stop_generation = 0
+        self.command_sequence = 0
+        self.last_command = None
+
+    def log(self, event, **fields):
+        # Fixed field names and validated commands only. Never log MQTT packets or credentials.
+        print(json.dumps({"event": event, **fields}, separators=(",", ":")), flush=True)
 
     def publish(self, suffix, value, retain=True):
         body = json.dumps(value, separators=(",", ":")) if isinstance(value, dict) else value
@@ -40,6 +46,7 @@ class Bridge:
                 "detail": detail,
                 "read_only": self.read_only,
                 "last_command_error": self.command_error,
+                "last_command": self.last_command,
             },
         )
 
@@ -47,7 +54,7 @@ class Bridge:
         if reason_code != 0:
             return
         self.connected = True
-        self.client.subscribe([(f"{self.base}/set/+", 0), ("homeassistant/status", 0)])
+        self.client.subscribe([(f"{self.base}/set/+", 1), ("homeassistant/status", 0)])
         self.publish("bridge", "online")
         self.publish("availability", "offline")
         self.rediscover = True
@@ -71,7 +78,7 @@ class Bridge:
                 self.rediscover = True
             return
         # Retained/re-delivered commands must never restart a kettle after reconnect.
-        if not self.connected or message.retain or message.dup or len(message.payload) > 128:
+        if not self.connected or message.retain or len(message.payload) > 128:
             return
         prefix = f"{self.base}/set/"
         if not message.topic.startswith(prefix):
@@ -82,7 +89,10 @@ class Bridge:
                 message.topic[len(prefix) :],
                 message.payload.decode("utf-8"),
             )
-            if command[1:] in {("stop", "PRESS"), ("mode", "off"), ("power", "OFF")}:
+            stopping = command[1:] in {("stop", "PRESS"), ("mode", "off"), ("power", "OFF")}
+            if message.dup and not stopping:
+                return
+            if stopping:
                 self.stop_generation += 1
                 self._clear_commands()
             self.commands.put_nowait(command)
@@ -122,19 +132,35 @@ class Bridge:
                         if self.last_read is not None
                         else float("inf"),
                     )
+                    self.command_sequence += 1
+                    self.last_command = {
+                        "sequence": self.command_sequence,
+                        "control": key,
+                        "status": "sending",
+                    }
+                    self.log(
+                        "command", sequence=self.command_sequence, control=key, stopping=stopping
+                    )
                     self.transport.write(
                         operations,
                         cancelled=lambda: not self.connected or generation != self.stop_generation,
                     )
                     self.command_error = ""
+                    self.last_command["status"] = "accepted"
                     self.next_poll = 0
                 except CommandError as error:
                     self.command_error = str(error)
+                    if self.last_command:
+                        self.last_command["status"] = "rejected"
+                    self.log("command_rejected", reason=str(error))
                     self.diagnostic("Check request", str(error))
-                except Exception:
+                except Exception as error:
                     self.command_error = (
                         "The command could not be confirmed. It will not be repeated."
                     )
+                    if self.last_command:
+                        self.last_command["status"] = "unconfirmed"
+                    self.log("command_unconfirmed", reason=type(error).__name__)
                     self.diagnostic(
                         "Check connection",
                         "The command could not be confirmed. It will not be repeated.",
@@ -143,7 +169,7 @@ class Bridge:
         if self.clock() >= self.next_poll:
             try:
                 self.read()
-                self.next_poll = self.clock() + (3 if self.state.get("power") else 10)
+                self.next_poll = self.clock() + (1 if self.state.get("mode") != "off" else 2)
             except Exception:
                 self.failures += 1
                 self.publish("availability", "offline")
@@ -155,6 +181,11 @@ class Bridge:
 
     def read(self):
         self.state = self.transport.read()
+        if self.last_command and self.last_command["status"] == "accepted":
+            self.last_command.update(
+                status="observed", mode=self.state["mode"], activity=self.state["activity"]
+            )
+            self.log("command_state", **self.last_command, power=self.state["power"])
         self.last_read = self.clock()
         self.failures = 0
         self.publish("state", self.state)
@@ -165,6 +196,7 @@ class Bridge:
                 "read_only": self.read_only,
                 "source": "local",
                 "activity": self.state["activity"],
+                "last_command": self.last_command,
             },
         )
         self.publish("availability", "online")

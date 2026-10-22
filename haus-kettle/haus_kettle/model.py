@@ -83,7 +83,7 @@ def decode(rows):
     state["activity"] = STATUSES[state["status"]]
     state["mode"] = (
         "off"
-        if not state["power"]
+        if not state["power"] or state["status"] == 0
         else "performance"
         if state.get("target_mode") == 1 or state["status"] == 2
         else "electric"
@@ -106,7 +106,9 @@ def plan(key, payload, state, *, read_only=False, age=0):
     if key in {"boil", "stop"} and value != "PRESS":
         raise CommandError("Unsupported button command.")
     if key == "stop" or key in {"mode", "power"} and value in {"off", "OFF"}:
-        return [Operation("action", ({"siid": 3, "aiid": 1, "in": []},))]
+        # stop-work cancels the current task but can leave the power latch set.
+        # Clear both so the next status report cannot resurrect Heat/Boil.
+        return [Operation("action", ({"siid": 3, "aiid": 1, "in": []},)), _set("power", False)]
     if key in {"boil", "mode", "power"}:
         mode = "performance" if key == "boil" else value
         if key == "power" and value == "ON":

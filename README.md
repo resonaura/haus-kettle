@@ -15,8 +15,9 @@ Alternatively select **local**, supply the kettle's IP, device ID and local toke
 ## Behavior
 
 - Every activation requires a fresh local reading with no reported fault and the kettle on its base. This is not a water-level sensor: the owner must ensure that water is present.
-- Boil selects the kettle's native boiling mode, then starts it. Heat selects its native heating mode. Existing keep-warm and knob presets remain intact. Off uses its native stop action.
-- Writes are serialized, never retried automatically, never retained and never replayed after reconnect. Stale, duplicate and retained MQTT commands are discarded. A failed preset change prevents the following activation.
+- Boil selects the kettle's native boiling mode, then starts it. Heat selects its native heating mode. Existing keep-warm and knob presets remain intact. Off cancels the task and clears the power latch; an idle kettle is reported as Off even if its firmware keeps that latch set.
+- Writes are serialized, never retried automatically, never retained and never replayed after reconnect. Stale and retained MQTT commands are discarded. QoS 1 delivery is enabled; duplicate activations are rejected, while a redelivered Off remains safe and cancels queued activations. A failed preset change prevents the following activation.
+- State is checked every second during an active task and every two seconds while idle, with an immediate reading after a command. Diagnostics record the command sequence, acceptance and the actual observed state, without private packets or credentials.
 - Read errors retain the last reported values but mark the device unavailable. A separate diagnostic remains readable while the bridge is connected. Polling backs off to 60 seconds and recovers automatically; UDP handshakes and requests have fixed deadlines.
 - Local tokens are cached with mode `0600` in app data and included in normal Home Assistant app backups. Tokens, packets and raw transport errors are not logged. No network port, host networking or privileged container access is required.
 - HA HomeKit Bridge supports `water_heater`. Export the main entity for temperature/mode control; optional buttons and configuration entities can remain in Home Assistant. A real HomeKit pairing/physical heating check is still necessary for a particular firmware.
