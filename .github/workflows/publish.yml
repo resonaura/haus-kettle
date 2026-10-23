@@ -55,11 +55,11 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/haus-kettle-${{ matrix.arch }}:0.1.3
+            ghcr.io/${{ github.repository_owner }}/haus-kettle-${{ matrix.arch }}:0.1.4
             ghcr.io/${{ github.repository_owner }}/haus-kettle-${{ matrix.arch }}:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.title=Haus Kettle
-            org.opencontainers.image.version=0.1.3
+            org.opencontainers.image.version=0.1.4
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
