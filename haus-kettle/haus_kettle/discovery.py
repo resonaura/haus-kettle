@@ -119,6 +119,17 @@ def discovery(device_id, name, *, read_only=False):
                 **controls,
             )
     add(
+        "refresh",
+        "button",
+        name="Refresh readings",
+        command_topic=f"{base}/set/refresh",
+        payload_press="PRESS",
+        icon="mdi:refresh",
+        entity_category="diagnostic",
+        availability=[{"topic": f"{base}/bridge"}],
+        retain=False,
+    )
+    add(
         "connection",
         "sensor",
         name="Connection",

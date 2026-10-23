@@ -96,6 +96,20 @@ def _set(key, value):
     return Operation("set_properties", ({"siid": siid, "piid": piid, "value": value},))
 
 
+def expected_state(key, payload):
+    """The observable outcome of an already validated command, never a transport ACK."""
+    value = payload.strip()
+    if key == "stop" or key in {"mode", "power"} and value in {"off", "OFF"}:
+        return {"mode": "off", "power": False}
+    if key in {"boil", "mode", "power"}:
+        return {"mode": "performance" if key == "boil" else "electric" if key == "power" else value}
+    if key in SWITCHES:
+        return {key: value == "ON"}
+    if key in NUMBERS:
+        return {key: number(value, *NUMBERS[key][:3])}
+    return {}
+
+
 def plan(key, payload, state, *, read_only=False, age=0):
     """Validate a fresh explicit request. Activation always comes last; never retry it."""
     if read_only:
