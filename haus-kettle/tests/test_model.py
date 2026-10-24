@@ -115,3 +115,9 @@ class ModelTest(unittest.TestCase):
         _, monitor = discovery("123", "Kitchen Kettle", read_only=True)
         self.assertNotIn("boil", monitor["components"])
         self.assertNotIn("mode_command_topic", monitor["components"]["kettle"])
+        refresh = monitor["components"]["refresh"]
+        self.assertEqual(refresh["unique_id"], "haus_kettle_123_refresh")
+        self.assertEqual(refresh["command_topic"], "haus/kettle/123/set/refresh")
+        self.assertEqual(refresh["entity_category"], "diagnostic")
+        self.assertEqual(refresh["availability"], [{"topic": "haus/kettle/123/bridge"}])
+        self.assertFalse(refresh["retain"])
