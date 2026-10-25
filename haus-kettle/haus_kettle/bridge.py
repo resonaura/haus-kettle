@@ -198,6 +198,10 @@ class Bridge:
         }
         self.confirm_by = None
         if now - created <= (30 if stopping else 4):
+            write_started = None
+            operation_count = 0
+            accepted_operations = 0
+            operation_in_progress = None
             try:
                 # Never activate from a cached/stale safety state.
                 if not stopping:
@@ -213,9 +217,64 @@ class Bridge:
                 )
                 self.last_command.update(status="sending", expected=expected_state(key, value))
                 self.log("command", **self.last_command, stopping=stopping)
+                write_started = self.clock()
+                command_sequence = self.last_command["sequence"]
+                operation_count = len(operations)
+                self.log(
+                    "command_write_started",
+                    sequence=command_sequence,
+                    operation_count=operation_count,
+                )
+
+                def safe_targets(operation):
+                    targets = []
+                    for parameter in operation.params:
+                        if not isinstance(parameter, dict):
+                            continue
+                        # MIoT property/action identifiers are useful for debugging;
+                        # never include device IDs, values, tokens or packet contents.
+                        target = {
+                            key: parameter[key]
+                            for key in ("siid", "piid", "aiid")
+                            if isinstance(parameter.get(key), int)
+                            and not isinstance(parameter.get(key), bool)
+                        }
+                        if target:
+                            targets.append(target)
+                    return targets
+
+                def operation_started(operation, index, total):
+                    nonlocal operation_in_progress
+                    operation_in_progress = index + 1
+                    self.log(
+                        "command_operation_started",
+                        sequence=command_sequence,
+                        operation=operation_in_progress,
+                        operation_count=total,
+                        method=operation.method,
+                        targets=safe_targets(operation),
+                        elapsed_ms=max(0, round((self.clock() - write_started) * 1000)),
+                    )
+
+                def operation_accepted(operation, index, total):
+                    nonlocal accepted_operations, operation_in_progress
+                    accepted_operations = index + 1
+                    operation_in_progress = None
+                    self.log(
+                        "command_operation_accepted",
+                        sequence=command_sequence,
+                        operation=index + 1,
+                        operation_count=total,
+                        method=operation.method,
+                        targets=safe_targets(operation),
+                        elapsed_ms=max(0, round((self.clock() - write_started) * 1000)),
+                    )
+
                 self.transport.write(
                     operations,
                     cancelled=lambda: not self.connected or generation != self.stop_generation,
+                    on_operation=operation_accepted,
+                    on_operation_start=operation_started,
                 )
                 self.command_error = ""
                 if not self.connected or generation != self.stop_generation:
@@ -230,6 +289,24 @@ class Bridge:
                 if self.last_command:
                     self.last_command["status"] = "rejected"
                 self.log("command_rejected", **self.last_command, reason=str(error))
+                if write_started is not None:
+                    self.log(
+                        "command_write_interrupted",
+                        sequence=command_sequence,
+                        operation_count=operation_count,
+                        accepted_operation_count=accepted_operations,
+                        operation_in_progress=operation_in_progress,
+                        next_operation=accepted_operations + 1
+                        if operation_in_progress is None and accepted_operations < operation_count
+                        else None,
+                        phase="operation"
+                        if operation_in_progress is not None
+                        else "handshake"
+                        if accepted_operations == 0
+                        else "between_operations",
+                        error_type=type(error).__name__,
+                        elapsed_ms=max(0, round((self.clock() - write_started) * 1000)),
+                    )
                 self.publish_attributes()
                 self.diagnostic("Check request", str(error))
             except Exception as error:
@@ -241,6 +318,24 @@ class Bridge:
                         self.last_command["status"] = "waiting"
                         self.confirm_by = self.clock() + CONFIRMATION_SECONDS
                 self.log("command_unconfirmed", **self.last_command, reason=type(error).__name__)
+                if write_started is not None:
+                    self.log(
+                        "command_write_interrupted",
+                        sequence=command_sequence,
+                        operation_count=operation_count,
+                        accepted_operation_count=accepted_operations,
+                        operation_in_progress=operation_in_progress,
+                        next_operation=accepted_operations + 1
+                        if operation_in_progress is None and accepted_operations < operation_count
+                        else None,
+                        phase="operation"
+                        if operation_in_progress is not None
+                        else "handshake"
+                        if accepted_operations == 0
+                        else "between_operations",
+                        error_type=type(error).__name__,
+                        elapsed_ms=max(0, round((self.clock() - write_started) * 1000)),
+                    )
                 self.publish_attributes()
                 self.diagnostic(
                     "Check connection",

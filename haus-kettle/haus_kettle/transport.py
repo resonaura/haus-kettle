@@ -82,14 +82,22 @@ class Transport:
             rows.extend(self.send("get_properties", properties[offset : offset + 8]))
         return decode(rows)
 
-    def write(self, operations, *, cancelled=lambda: False):
+    def write(
+        self,
+        operations,
+        *,
+        cancelled=lambda: False,
+        on_operation=lambda *_args: None,
+        on_operation_start=lambda *_args: None,
+    ):
         # Stop intentionally skips a state read; still refresh identity and clock.
         if cancelled():
             raise CommandError("A newer request cancelled this command.")
         self.handshake()
-        for operation in operations:
+        for index, operation in enumerate(operations):
             if cancelled():
                 raise CommandError("A newer request cancelled this command.")
+            on_operation_start(operation, index, len(operations))
             params = [{"did": self.did, **item} for item in operation.params]
             result = self.send(
                 operation.method, params[0] if operation.method == "action" else params
@@ -99,3 +107,4 @@ class Transport:
                 raise CommandError(
                     "The kettle did not confirm the command. Its state will be checked again."
                 )
+            on_operation(operation, index, len(operations))

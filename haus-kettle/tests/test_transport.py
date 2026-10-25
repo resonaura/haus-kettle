@@ -103,13 +103,35 @@ class TransportTest(unittest.TestCase):
         self.transport.read()
         self.peer.requests.clear()
         self.peer.reject = True
+        accepted = []
+        started = []
         with self.assertRaises(CommandError):
-            self.transport.write(plan("boil", "PRESS", reading()))
+            self.transport.write(
+                plan("boil", "PRESS", reading()),
+                on_operation=lambda operation, index, total: accepted.append(
+                    (operation.method, index, total)
+                ),
+                on_operation_start=lambda operation, index, total: started.append(
+                    (operation.method, index, total)
+                ),
+            )
         self.assertEqual(len(self.peer.requests), 1)
         self.assertEqual(self.peer.requests[0]["params"][0]["piid"], 11)
+        self.assertEqual(started, [("set_properties", 0, 2)])
+        self.assertEqual(accepted, [])
 
     def test_stop_action_uses_object_parameters(self):
-        self.transport.write(plan("stop", "PRESS", {}))
+        accepted = []
+        started = []
+        self.transport.write(
+            plan("stop", "PRESS", {}),
+            on_operation=lambda operation, index, total: accepted.append(
+                (operation.method, index, total)
+            ),
+            on_operation_start=lambda operation, index, total: started.append(
+                (operation.method, index, total)
+            ),
+        )
         self.assertEqual(self.peer.requests[-2]["method"], "action")
         self.assertEqual(
             self.peer.requests[-2]["params"], {"did": "123", "siid": 3, "aiid": 1, "in": []}
@@ -117,6 +139,8 @@ class TransportTest(unittest.TestCase):
         self.assertEqual(
             self.peer.requests[-1]["params"], [{"did": "123", "siid": 2, "piid": 7, "value": False}]
         )
+        self.assertEqual(started, [("action", 0, 2), ("set_properties", 1, 2)])
+        self.assertEqual(accepted, [("action", 0, 2), ("set_properties", 1, 2)])
 
     def test_cancellation_between_preset_ack_and_activation_prevents_power_on(self):
         self.transport.read()
