@@ -3,6 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 from haus_kettle.bridge import Bridge
+from haus_kettle.model import CommandError
 from test_model import reading
 
 
@@ -29,10 +30,20 @@ class Device:
             raise TimeoutError("secret token must never appear in diagnostics")
         return reading()
 
-    def write(self, operations, *, cancelled=lambda: False):
+    def write(
+        self,
+        operations,
+        *,
+        cancelled=lambda: False,
+        on_operation=lambda *_: None,
+        on_operation_start=lambda *_: None,
+    ):
         if cancelled():
             raise TimeoutError("Cancelled")
         self.writes.append(operations)
+        for index, operation in enumerate(operations):
+            on_operation_start(operation, index, len(operations))
+            on_operation(operation, index, len(operations))
 
 
 class BridgeTest(unittest.TestCase):
@@ -127,6 +138,69 @@ class BridgeTest(unittest.TestCase):
         self.bridge.tick()
         self.assertEqual(self.bridge.last_command["status"], "observed")
         self.assertEqual(len(self.device.writes), 1)
+
+    def test_off_write_diagnostics_correlate_each_accepted_step_without_values(self):
+        events = []
+        self.bridge.log = lambda event, **fields: events.append((event, fields))
+
+        def write_with_progress(
+            operations,
+            *,
+            cancelled=lambda: False,
+            on_operation=lambda *_: None,
+            on_operation_start=lambda *_: None,
+        ):
+            self.device.writes.append(operations)
+            for index, operation in enumerate(operations):
+                if cancelled():
+                    raise TimeoutError("Cancelled")
+                on_operation_start(operation, index, len(operations))
+                on_operation(operation, index, len(operations))
+
+        self.device.write = write_with_progress
+        self.send("mode", b"off")
+        self.bridge.tick()
+
+        accepted = [fields for event, fields in events if event == "command_operation_accepted"]
+        started = [fields for event, fields in events if event == "command_operation_started"]
+        self.assertEqual([item["operation"] for item in started], [1, 2])
+        self.assertEqual(len(accepted), 2)
+        self.assertEqual([item["operation"] for item in accepted], [1, 2])
+        self.assertEqual([item["operation_count"] for item in accepted], [2, 2])
+        self.assertEqual([item["method"] for item in accepted], ["action", "set_properties"])
+        self.assertEqual(accepted[0]["targets"], [{"siid": 3, "aiid": 1}])
+        self.assertEqual(accepted[1]["targets"], [{"siid": 2, "piid": 7}])
+        self.assertTrue(all("value" not in item for item in accepted))
+        self.assertEqual(self.bridge.last_command["status"], "observed")
+
+    def test_off_write_diagnostics_report_explicit_rejection_at_the_failed_step(self):
+        events = []
+        self.bridge.log = lambda event, **fields: events.append((event, fields))
+
+        def reject_second_operation(
+            operations,
+            *,
+            cancelled=lambda: False,
+            on_operation=lambda *_: None,
+            on_operation_start=lambda *_: None,
+        ):
+            on_operation_start(operations[0], 0, len(operations))
+            on_operation(operations[0], 0, len(operations))
+            on_operation_start(operations[1], 1, len(operations))
+            raise CommandError("The kettle did not accept the request.")
+
+        self.device.write = reject_second_operation
+        self.send("mode", b"off")
+        self.bridge.tick()
+
+        interrupted = [fields for event, fields in events if event == "command_write_interrupted"]
+        self.assertEqual(len(interrupted), 1)
+        self.assertEqual(interrupted[0]["operation_count"], 2)
+        self.assertEqual(interrupted[0]["accepted_operation_count"], 1)
+        self.assertEqual(interrupted[0]["operation_in_progress"], 2)
+        self.assertIsNone(interrupted[0]["next_operation"])
+        self.assertEqual(interrupted[0]["phase"], "operation")
+        self.assertEqual(interrupted[0]["error_type"], "CommandError")
 
     def test_unmatched_commands_finish_after_deadline_and_keep_actual_state(self):
         self.send()

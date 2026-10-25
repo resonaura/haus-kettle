@@ -1,6 +1,6 @@
 name: Haus Kettle
 slug: haus-kettle
-version: "0.1.4"
+version: "0.1.5"
 description: "Local Xiaomi kettle control, temperatures, presets and connection recovery."
 url: "https://github.com/resonaura/haus-kettle"
 image: "ghcr.io/resonaura/haus-kettle-{arch}"

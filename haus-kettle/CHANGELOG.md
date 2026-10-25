@@ -1,3 +1,10 @@
+# 0.1.5
+
+- Log each MIoT write step as it starts and after it is acknowledged, with command sequence, operation order, method, property/action identifiers and elapsed time. Interrupted writes identify whether the bridge was handshaking, waiting on a specific operation or between operations, so an Off request shows whether the stop action, power-off property or later state confirmation failed.
+- Diagnostics never include device IDs, property values, tokens, encrypted packets or raw exceptions. Write progress callbacks run only after the device acknowledges each step; no command retry or replay was added.
+
+No live activation command was sent during development; verification uses the synthetic encrypted UDP device.
+
 # 0.1.4
 
 - Confirm a change only when fresh local readings match its expected result, with separate device acknowledgement and observation diagnostics.

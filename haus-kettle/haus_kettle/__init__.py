@@ -1,3 +1,3 @@
 """Local MIoT kettle bridge. No device writes during startup or recovery."""
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
